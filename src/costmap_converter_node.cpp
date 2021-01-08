@@ -41,7 +41,9 @@
 #include <costmap_2d/costmap_2d.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/PolygonStamped.h>
+#include <geometry_msgs/PoseArray.h>
 #include <visualization_msgs/Marker.h>
+#include <tf/transform_listener.h>
 
 #include <costmap_converter/costmap_converter_interface.h>
 #include <pluginlib/class_loader.h>
@@ -54,7 +56,7 @@ public:
   CostmapStandaloneConversion() : converter_loader_("costmap_converter", "costmap_converter::BaseCostmapToPolygons"), n_("~")
   {
       // load converter plugin from parameter server, otherwise set default
-      std::string converter_plugin = "costmap_converter::CostmapToPolygonsDBSMCCH";
+			std::string converter_plugin = "costmap_converter::CostmapToDynamicObstacles";
       n_.param("converter_plugin", converter_plugin, converter_plugin);
 
       try
@@ -85,6 +87,7 @@ public:
       costmap_update_sub_ = n_.subscribe(costmap_update_topic, 1, &CostmapStandaloneConversion::costmapUpdateCallback, this);
       obstacle_pub_ = n_.advertise<costmap_converter::ObstacleArrayMsg>(obstacles_topic, 1000);
       marker_pub_ = n_.advertise<visualization_msgs::Marker>(polygon_marker_topic, 10);
+      pose_array_pub_ = n_.advertise<geometry_msgs::PoseArray>("/uvc/humans", 10);
 
       occupied_min_value_ = 100;
       n_.param("occupied_min_value", occupied_min_value_, occupied_min_value_);
@@ -137,6 +140,7 @@ public:
       frame_id_ = msg->header.frame_id;
 
       publishAsMarker(frame_id_, *obstacles, marker_pub_);
+			publishAsPoseArray(frame_id_, *obstacles, pose_array_pub_, tf_);
   }
 
   void costmapUpdateCallback(const map_msgs::OccupancyGridUpdateConstPtr& update)
@@ -162,6 +166,7 @@ public:
     obstacle_pub_.publish(obstacles);
 
     publishAsMarker(frame_id_, *obstacles, marker_pub_);
+		publishAsPoseArray(frame_id_, *obstacles, pose_array_pub_, tf_);
   }
 
   void publishAsMarker(const std::string& frame_id, const std::vector<geometry_msgs::PolygonStamped>& polygonStamped, ros::Publisher& marker_pub)
@@ -264,6 +269,47 @@ public:
     marker_pub.publish(line_list);
   }
 
+  void publishAsPoseArray(const std::string& frame_id, const costmap_converter::ObstacleArrayMsg& obstacles, ros::Publisher& marker_pub, tf::TransformListener& tf)
+  {
+		if(tf.canTransform("/map", "/odom_combined", ros::Time(0))){
+
+			ROS_INFO_ONCE("Publishing Pose Array");
+			geometry_msgs::PoseArray pose_array;
+			//pose_array.header.frame_id = frame_id;
+			pose_array.header.frame_id = "/map";
+			pose_array.header.stamp = ros::Time::now();
+
+			for (const costmap_converter::ObstacleMsg& obstacle : obstacles.obstacles)
+			{
+				geometry_msgs::Pose pose;
+				float sum_x = 0.0;
+				float sum_y = 0.0;
+				for (int j=0; j< (int)obstacle.polygon.points.size(); ++j)
+				{
+					sum_x += obstacle.polygon.points[j].x;
+					sum_y += obstacle.polygon.points[j].y;
+				}
+				pose.position.x = sum_x / obstacle.polygon.points.size();
+				pose.position.y = sum_y / obstacle.polygon.points.size();
+
+				geometry_msgs::PointStamped point_in, point_out;
+				point_in.header.frame_id = "/odom_combined";
+				point_in.header.stamp = ros::Time(0);
+				point_in.point.x = pose.position.x;
+				point_in.point.y = pose.position.y;
+				tf.transformPoint("/map", point_in , point_out);
+				pose.position.x = point_out.point.x;
+				pose.position.y = point_out.point.y;
+
+				pose_array.poses.push_back(pose);
+
+			}
+			marker_pub.publish(pose_array);
+		}else{
+			ROS_ERROR("No transform could be found between /map and ");
+		}
+  }
+
 private:
   pluginlib::ClassLoader<costmap_converter::BaseCostmapToPolygons> converter_loader_;
   boost::shared_ptr<costmap_converter::BaseCostmapToPolygons> converter_;
@@ -272,7 +318,9 @@ private:
   ros::Subscriber costmap_sub_;
   ros::Subscriber costmap_update_sub_;
   ros::Publisher obstacle_pub_;
+  ros::Publisher pose_array_pub_;
   ros::Publisher marker_pub_;
+	tf::TransformListener tf_;
 
   std::string frame_id_;
   int occupied_min_value_;
