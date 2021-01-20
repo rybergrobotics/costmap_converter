@@ -1,0 +1,29 @@
+<launch>
+  <node pkg="costmap_converter" type="standalone_converter" name="human_detection" output="screen">
+	  <!--Configuration for the DBSMCCH algorithm-->
+	  <param name="CostmapToPolygonsDBSMCCH/cluster_max_distance" value="0.4" />
+	  <param name="CostmapToPolygonsDBSMCCH/cluster_min_pts" value="2" />
+	  <param name="CostmapToPolygonsDBSMCCH/cluster_max_pts" value="30" />
+	  <param name="CostmapToPolygonsDBSMCCH/convex_hull_min_pt_separation" value="0.1" />
+
+	  <!--Configuration for the Dynamic obstacle detector-->
+    <param name="publish_static_obstacles" value="false" />
+    	
+	<!--"Blob detection: Minimal number of pixels a blob consists of. Default 3"-->
+	<param name="min_area" value="5"/> 
+
+	<!--"Blob detection: Maximal number of pixels a blob consists of. Default 300"-->
+	<param name="max_area" value="20"/>
+
+	<!--"Blob detection: Minimal circularity value (0 in case of a line)" Default 0.2-->
+	<param name="min_circularity" value="0.5"/>
+
+	<!--"Blob detection: Maximal circularity value (1 in case of a circle)" Default 1.0-->
+	<param name="max_circularity" value="1.0"/>
+
+	<!--"Tracking: Time for one timestep of the kalman filter" Default 0.2-->
+	<!--I have changed it to 1 because that is the publish frequency of the local map  -->
+	<param name="dt" value="1.0"/>
+
+  </node>
+</launch>
